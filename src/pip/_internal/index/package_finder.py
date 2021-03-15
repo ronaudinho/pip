@@ -223,7 +223,10 @@ class LinkEvaluator:
         if not supports_python:
             # Return None for the reason text to suppress calling
             # _log_skipped_link().
-            return (False, None)
+            return (
+                False,
+                '{} requires-python {}'.format(version, link.requires_python),
+            )
 
         logger.debug('Found link %s, version: %s', link, version)
 
@@ -608,6 +611,7 @@ class PackageFinder:
 
         # These are boring links that have already been logged somehow.
         self._logged_links = set()  # type: Set[Link]
+        self._logged_links_rp = set()  # type: Set[str]
 
     # Don't include an allow_yanked default value to make sure each call
     # site considers whether yanked releases are allowed. This also causes
@@ -695,6 +699,12 @@ class PackageFinder:
         # type: () -> None
         self._candidate_prefs.prefer_binary = True
 
+    def logged_links_rp(self):
+        # type: () -> List[str]
+        skips = [skip for skip in self._logged_links_rp]
+        skips.sort()
+        return skips
+
     def make_link_evaluator(self, project_name):
         # type: (str) -> LinkEvaluator
         canonical_name = canonicalize_name(project_name)
@@ -734,6 +744,11 @@ class PackageFinder:
             logger.debug('Skipping link: %s: %s', reason, link)
             self._logged_links.add(link)
 
+    def _log_skipped_link_rp(self, reason):
+        # type: (str) -> None
+        if reason not in self._logged_links_rp:
+            self._logged_links_rp.add(reason)
+
     def get_install_candidate(self, link_evaluator, link):
         # type: (LinkEvaluator, Link) -> Optional[InstallationCandidate]
         """
@@ -742,7 +757,9 @@ class PackageFinder:
         """
         is_candidate, result = link_evaluator.evaluate_link(link)
         if not is_candidate:
-            if result:
+            if 'requires-python' in result:
+                self._log_skipped_link_rp(result)
+            else:
                 self._log_skipped_link(link, reason=result)
             return None
 
