@@ -221,7 +221,7 @@ class LinkEvaluator:
             ignore_requires_python=self._ignore_requires_python,
         )
         if not supports_python:
-            reason = f'{version} requires-python {link.requires_python}'
+            reason = f'{version} Requires-Python {link.requires_python}'
             return (False, reason)
 
         logger.debug('Found link %s, version: %s', link, version)
@@ -606,8 +606,7 @@ class PackageFinder:
         self.format_control = format_control
 
         # These are boring links that have already been logged somehow.
-        self._logged_links = set()  # type: Set[Link]
-        self._logged_links_rp = set()  # type: Set[str]
+        self._logged_links = set()  # type: Set[Tuple[Link, str]]
 
     # Don't include an allow_yanked default value to make sure each call
     # site considers whether yanked releases are allowed. This also causes
@@ -695,9 +694,9 @@ class PackageFinder:
         # type: () -> None
         self._candidate_prefs.prefer_binary = True
 
-    def logged_links_rp(self):
+    def skipped_links_requires_python(self):
         # type: () -> List[str]
-        skips = [skip for skip in self._logged_links_rp]
+        skips = [skip[1] for skip in self._logged_links if 'Requires-Python' in skip[1]]
         skips.sort()
         return skips
 
@@ -734,16 +733,11 @@ class PackageFinder:
 
     def _log_skipped_link(self, link, reason):
         # type: (Link, str) -> None
-        if link not in self._logged_links:
+        if (link, reason) not in self._logged_links:
             # Put the link at the end so the reason is more visible and because
             # the link string is usually very long.
             logger.debug('Skipping link: %s: %s', reason, link)
-            self._logged_links.add(link)
-
-    def _log_skipped_link_rp(self, reason):
-        # type: (str) -> None
-        if reason not in self._logged_links_rp:
-            self._logged_links_rp.add(reason)
+            self._logged_links.add((link, reason))
 
     def get_install_candidate(self, link_evaluator, link):
         # type: (LinkEvaluator, Link) -> Optional[InstallationCandidate]
@@ -753,10 +747,7 @@ class PackageFinder:
         """
         is_candidate, result = link_evaluator.evaluate_link(link)
         if not is_candidate:
-            if 'requires-python' in result:
-                self._log_skipped_link_rp(result)
-            else:
-                self._log_skipped_link(link, reason=result)
+            self._log_skipped_link(link, result)
             return None
 
         return InstallationCandidate(
